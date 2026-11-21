@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>கார் விளையாட்டு</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    color: white;
+    overflow: hidden;
+  }
+  #gameContainer {
+    position: relative;
+    width: 360px;
+    height: 560px;
+    background: #1a1a2e;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid #00ffcc33;
+    box-shadow: 0 0 40px #00ffcc22;
+  }
+  canvas { display: block; }
+  #ui {
+    position: absolute;
+    top: 10px;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 16px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .stat {
+    background: #00000088;
+    border: 1px solid #00ffcc55;
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 13px;
+    color: #00ffcc;
+  }
+  .stat span { color: white; font-weight: bold; }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a1aee;
+    z-index: 20;
+    gap: 14px;
+  }
+  #overlay h1 { font-size: 28px; color: #00ffcc; text-shadow: 0 0 20px #00ffcc; }
+  #overlay p { font-size: 14px; color: #aaa; text-align: center; line-height: 1.6; }
+  #overlay .big { font-size: 20px; color: #ff4466; font-weight: bold; }
+  #overlay .score-display { font-size: 18px; color: #ffcc00; }
+  button {
+    background: linear-gradient(135deg, #00ffcc, #0088ff);
+    border: none;
+    color: #0a0a1a;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 12px 32px;
+    border-radius: 30px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: transform 0.1s;
+  }
+  button:hover { transform: scale(1.05); }
+  #controls {
+    margin-top: 8px;
+    display: flex;
+    gap: 12px;
+  }
+  .ctrl-btn {
+    background: #ffffff22;
+    border: 1px solid #00ffcc55;
+    color: white;
+    font-size: 22px;
+    width: 54px;
+    height: 54px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    transition: background 0.1s;
+  }
+  .ctrl-btn:active { background: #00ffcc44; }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="canvas" width="360" height="560"></canvas>
+  <div id="ui">
+    <div class="stat">மதிப்பெண்: <span id="scoreDisplay">0</span></div>
+    <div class="stat">வேகம்: <span id="speedDisplay">1</span></div>
+  </div>
+  <div id="overlay">
+    <h1>🚗 கார் ஓட்டம்</h1>
+    <p>← → அல்லது A/D விசைகள் மூலம்<br>கட்டுப்படுத்தவும்<br>வாகனங்களை தவிர்க்கவும்!</p>
+    <button onclick="startGame()">▶ விளையாட தொடங்கு</button>
+  </div>
+</div>
+<div id="controls">
+  <div class="ctrl-btn" id="leftBtn">◀</div>
+  <div class="ctrl-btn" id="rightBtn">▶</div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = 360, H = 560;
+
+const LANES = [70, 130, 190, 250, 310];
+let player, obstacles, score, speed, gameRunning, animId;
+let roadOffset = 0;
+let keys = {};
+
+const CAR_COLORS = ['#ff4466','#ffaa00','#00ccff','#aa44ff','#ff6600'];
+const OBSTACLE_TYPES = ['🚌','🚛','🏎️','🚕','🚙'];
+
+function startGame() {
+  document.getElementById('overlay').style.display = 'none';
+  player = { lane: 2, x: LANES[2], y: H - 100, w: 36, h: 60, moving: false, targetX: LANES[2] };
+  obstacles = [];
+  score = 0;
+  speed = 3;
+  gameRunning = true;
+  if (animId) cancelAnimationFrame(animId);
+  loop();
+}
+
+function loop() {
+  update();
+  draw();
+  if (gameRunning) animId = requestAnimationFrame(loop);
+}
+
+function update() {
+  roadOffset = (roadOffset + speed) % 40;
+  score += 1;
+  speed = 3 + Math.floor(score / 300) * 0.5;
+  if (speed > 10) speed = 10;
+
+  document.getElementById('scoreDisplay').textContent = Math.floor(score / 10);
+  document.getElementById('speedDisplay').textContent = Math.min(10, Math.floor(speed)).toString();
+
+  // Player movement
+  if (keys['ArrowLeft'] || keys['a'] || keys['A']) moveLeft();
+  if (keys['ArrowRight'] || keys['d'] || keys['D']) moveRight();
+
+  player.x += (player.targetX - player.x) * 0.15;
+
+  // Spawn obstacles
+  if (Math.random() < 0.02 + speed * 0.003) {
+    const lane = Math.floor(Math.random() * LANES.length);
+    const color = CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)];
+    obstacles.push({ x: LANES[lane], y: -70, w: 36, h: 60, color, lane });
+  }
+
+  // Move obstacles
+  obstacles.forEach(o => o.y += speed * 1.2);
+  obstacles = obstacles.filter(o => o.y < H + 80);
+
+  // Collision
+  obstacles.forEach(o => {
+    if (Math.abs(o.x - player.x) < 28 && Math.abs(o.y - player.y) < 50) {
+      gameOver();
+    }
+  });
+}
+
+function moveLeft() {
+  if (player.lane > 0) { player.lane--; player.targetX = LANES[player.lane]; }
+}
+function moveRight() {
+  if (player.lane < LANES.length - 1) { player.lane++; player.targetX = LANES[player.lane]; }
+}
+
+function draw() {
+  // Road
+  ctx.fillStyle = '#1c1c2e';
+  ctx.fillRect(0, 0, W, H);
+
+  // Road surface
+  ctx.fillStyle = '#2a2a3e';
+  ctx.fillRect(40, 0, W - 80, H);
+
+  // Lane markers
+  ctx.strokeStyle = '#ffffff22';
+  ctx.setLineDash([20, 20]);
+  ctx.lineWidth = 2;
+  for (let i = 1; i < LANES.length; i++) {
+    const lx = (LANES[i - 1] + LANES[i]) / 2;
+    ctx.beginPath();
+    for (let y = -40 + roadOffset; y < H; y += 40) {
+      ctx.moveTo(lx, y);
+      ctx.lineTo(lx, y + 20);
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Road edges glow
+  ctx.strokeStyle = '#00ffcc44';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(40, 0, W - 80, H);
+
+  // Draw obstacles
+  obstacles.forEach(o => drawCar(o.x, o.y, o.color, false));
+
+  // Draw player
+  drawCar(player.x, player.y, '#00ffcc', true);
+
+  // Speed lines at high speed
+  if (speed > 6) {
+    ctx.strokeStyle = `rgba(255,255,255,${(speed - 6) * 0.03})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      const lx = 50 + Math.random() * 260;
+      ctx.beginPath();
+      ctx.moveTo(lx, 0);
+      ctx.lineTo(lx, H);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawCar(x, y, color, isPlayer) {
+  const w = 34, h = 58;
+  ctx.save();
+  ctx.translate(x, y);
+  if (!isPlayer) ctx.rotate(Math.PI);
+
+  // Body
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-w/2, -h/2, w, h, 8);
+  ctx.fill();
+
+  // Windshield
+  ctx.fillStyle = isPlayer ? '#003333' : '#330000';
+  ctx.beginPath();
+  ctx.roundRect(-w/2 + 5, -h/2 + 8, w - 10, 14, 3);
+  ctx.fill();
+
+  // Headlights / taillights
+  ctx.fillStyle = isPlayer ? '#ffffaa' : '#ff2200';
+  ctx.fillRect(-w/2 + 4, -h/2 + 2, 8, 5);
+  ctx.fillRect(w/2 - 12, -h/2 + 2, 8, 5);
+
+  // Wheels
+  ctx.fillStyle = '#111';
+  ctx.fillRect(-w/2 - 4, -h/2 + 6, 6, 12);
+  ctx.fillRect(w/2 - 2, -h/2 + 6, 6, 12);
+  ctx.fillRect(-w/2 - 4, h/2 - 18, 6, 12);
+  ctx.fillRect(w/2 - 2, h/2 - 18, 6, 12);
+
+  ctx.restore();
+
+  // Glow for player
+  if (isPlayer) {
+    ctx.save();
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = '#00ffcc88';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x - w/2, y - h/2, w, h, 8);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function gameOver() {
+  gameRunning = false;
+  const finalScore = Math.floor(score / 10);
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div class="big">💥 மோதிவிட்டீர்கள்!</div>
+    <div class="score-display">மதிப்பெண்: ${finalScore}</div>
+    <p>${finalScore < 20 ? 'மீண்டும் முயற்சி செய்யுங்கள்!' : finalScore < 60 ? 'நல்ல முயற்சி! 👍' : 'அருமையான ஓட்டம்! 🏆'}</p>
+    <button onclick="startGame()">🔄 மீண்டும் விளையாடு</button>
+  `;
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+// Touch controls
+let touchStart = null;
+canvas.addEventListener('touchstart', e => { touchStart = e.touches[0].clientX; e.preventDefault(); }, {passive:false});
+canvas.addEventListener('touchend', e => {
+  if (touchStart !== null && gameRunning) {
+    const dx = e.changedTouches[0].clientX - touchStart;
+    if (dx < -20) moveLeft();
+    else if (dx > 20) moveRight();
+    touchStart = null;
+  }
+}, {passive:false});
+
+// Button controls
+let leftInterval, rightInterval;
+document.getElementById('leftBtn').addEventListener('mousedown', () => { moveLeft(); leftInterval = setInterval(moveLeft, 200); });
+document.getElementById('rightBtn').addEventListener('mousedown', () => { moveRight(); rightInterval = setInterval(moveRight, 200); });
+document.addEventListener('mouseup', () => { clearInterval(leftInterval); clearInterval(rightInterval); });
+document.getElementById('leftBtn').addEventListener('touchstart', e => { e.preventDefault(); moveLeft(); leftInterval = setInterval(moveLeft, 200); }, {passive:false});
+document.getElementById('rightBtn').addEventListener('touchstart', e => { e.preventDefault(); moveRight(); rightInterval = setInterval(moveRight, 200); }, {passive:false});
+document.addEventListener('touchend', () => { clearInterval(leftInterval); clearInterval(rightInterval); });
+</script>
+</body>
+</html>
